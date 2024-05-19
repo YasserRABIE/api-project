@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"strconv"
 
 	"github.com/gorilla/mux"
 )
@@ -34,25 +35,53 @@ func (s *APIserver) handleAccount(w http.ResponseWriter, r *http.Request) error 
 }
 
 func (s *APIserver) handleGetAccount(w http.ResponseWriter, r *http.Request) error {
-	id := mux.Vars(r)["id"]
+	id, err := strconv.Atoi(mux.Vars(r)["id"])
+	if err != nil {
+		return err
+	}
 
-	fmt.Println(id)
+	account, err := s.store.GetAccountByID(int(id))
+	if err != nil {
+		return err
+	}
 
-	return WriteJSON(w, http.StatusOK, &Account{})
+	return WriteJSON(w, http.StatusOK, account)
 }
 
 func (s *APIserver) handleCreateAccount(w http.ResponseWriter, r *http.Request) error {
-	return nil
+	createAccountReq := &CreateAccountRequest{}
+
+	if err := json.NewDecoder(r.Body).Decode(createAccountReq); err != nil {
+		return err
+	}
+
+	account := NewAccount(createAccountReq.FirstName, createAccountReq.LastName)
+
+	if err := s.store.CreateAccount(account); err != nil {
+		return err
+	}
+
+	return WriteJSON(w, http.StatusOK, account)
 }
 
 func (s *APIserver) handleDeleteAccount(w http.ResponseWriter, r *http.Request) error {
-	return nil
+	id, err := strconv.Atoi(mux.Vars(r)["id"])
+	if err != nil {
+		return err
+	}
+
+	if err := s.store.DeleteAccount(id); err != nil {
+		return err
+	}
+
+	return WriteJSON(w, http.StatusOK, apiError{Message: "account is deleted"})
 }
 
 type apiFunc func(http.ResponseWriter, *http.Request) error
 
 type apiError struct {
-	Error string
+	Error   string `json:"error,omitempty"`
+	Message string `json:"message,omitempty"`
 }
 
 func WriteJSON(w http.ResponseWriter, status int, value any) error {
@@ -71,10 +100,12 @@ func makeHTTPHandleFunc(fn apiFunc) http.HandlerFunc {
 
 type APIserver struct {
 	listenAddr string
+	store      *PostgresStore
 }
 
-func NewAPIServer(listenAddr string) *APIserver {
+func NewAPIServer(listenAddr string, store *PostgresStore) *APIserver {
 	return &APIserver{
 		listenAddr: listenAddr,
+		store:      store,
 	}
 }
