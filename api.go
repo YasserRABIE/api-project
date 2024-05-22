@@ -21,6 +21,8 @@ func (s *APIserver) run() {
 	http.ListenAndServe(s.listenAddr, router)
 }
 
+type apiFunc func(http.ResponseWriter, *http.Request) error
+
 func (s *APIserver) handleAccount(w http.ResponseWriter, r *http.Request) error {
 	switch {
 	case r.Method == "GET":
@@ -29,6 +31,8 @@ func (s *APIserver) handleAccount(w http.ResponseWriter, r *http.Request) error 
 		return s.handleCreateAccount(w, r)
 	case r.Method == "DELETE":
 		return s.handleDeleteAccount(w, r)
+	case r.Method == "PUT":
+		return s.handleUpdateAccount(w, r)
 	}
 
 	return fmt.Errorf("method not allowed %s", r.Method)
@@ -63,6 +67,23 @@ func (s *APIserver) handleCreateAccount(w http.ResponseWriter, r *http.Request) 
 
 	return WriteJSON(w, http.StatusOK, account)
 }
+func (s *APIserver) handleUpdateAccount(w http.ResponseWriter, r *http.Request) error {
+	UpdateAccountReq := UpdatedAccount()
+	id, err := strconv.Atoi(mux.Vars(r)["id"])
+	if err != nil {
+		return err
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(UpdateAccountReq); err != nil {
+		return err
+	}
+
+	if _, err := s.store.UpdateAccount(UpdateAccountReq, id); err != nil {
+		return err
+	}
+
+	return WriteJSON(w, http.StatusOK, UpdateAccountReq)
+}
 
 func (s *APIserver) handleDeleteAccount(w http.ResponseWriter, r *http.Request) error {
 	id, err := strconv.Atoi(mux.Vars(r)["id"])
@@ -77,27 +98,10 @@ func (s *APIserver) handleDeleteAccount(w http.ResponseWriter, r *http.Request) 
 	return WriteJSON(w, http.StatusOK, apiError{Message: "account is deleted"})
 }
 
-type apiFunc func(http.ResponseWriter, *http.Request) error
-
 type apiError struct {
 	Error   string `json:"error,omitempty"`
 	Message string `json:"message,omitempty"`
 }
-
-func WriteJSON(w http.ResponseWriter, status int, value any) error {
-	w.Header().Add("Content-Type", "application/json")
-	w.WriteHeader(status)
-	return json.NewEncoder(w).Encode(value)
-}
-
-func makeHTTPHandleFunc(fn apiFunc) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if err := fn(w, r); err != nil {
-			WriteJSON(w, http.StatusBadRequest, apiError{Error: err.Error()})
-		}
-	}
-}
-
 type APIserver struct {
 	listenAddr string
 	store      *PostgresStore
@@ -108,4 +112,18 @@ func NewAPIServer(listenAddr string, store *PostgresStore) *APIserver {
 		listenAddr: listenAddr,
 		store:      store,
 	}
+}
+
+func makeHTTPHandleFunc(fn apiFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if err := fn(w, r); err != nil {
+			WriteJSON(w, http.StatusBadRequest, apiError{Error: err.Error()})
+		}
+	}
+}
+
+func WriteJSON(w http.ResponseWriter, status int, value any) error {
+	w.Header().Add("Content-Type", "application/json")
+	w.WriteHeader(status)
+	return json.NewEncoder(w).Encode(value)
 }
