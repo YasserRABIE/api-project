@@ -2,6 +2,7 @@ package main
 
 import (
 	"database/sql"
+	"os"
 
 	_ "github.com/lib/pq"
 )
@@ -18,7 +19,7 @@ type PostgresStore struct {
 }
 
 func NewPostgresStore() (*PostgresStore, error) {
-	connStr := "user=postgres dbname=postgres password=yasser2006 sslmode=disable"
+	connStr := os.Getenv("DB")
 
 	db, err := sql.Open("postgres", connStr)
 
@@ -61,12 +62,19 @@ func (s *PostgresStore) CretaeAccountTable() error {
 func (s *PostgresStore) CreateAccount(a *Account) error {
 	query := `
 	INSERT INTO Accounts 
-	(first_name, last_name, number, balance, created_at) 
-	VALUES ($1, $2, $3, $4, $5)
+	(first_name, last_name, number, balance,updated_at, created_at) 
+	VALUES ($1, $2, $3, $4, $5, $6)
 	RETURNING id;
 	`
 
-	err := s.db.QueryRow(query, a.FirstName, a.LastName, a.Number, a.Balance, a.Created_at).Scan(&a.ID)
+	err := s.db.QueryRow(query,
+		a.FirstName,
+		a.LastName, a.Number,
+		a.Balance,
+		a.Updated_at,
+		a.Created_at,
+	).Scan(&a.ID)
+
 	if err != nil {
 		return err
 	}
@@ -74,8 +82,38 @@ func (s *PostgresStore) CreateAccount(a *Account) error {
 	return nil
 }
 
-func (s *PostgresStore) UpdateAccount(a *Account) error {
-	return nil
+func (s *PostgresStore) UpdateAccount(a *Account, id int) (*Account, error) {
+	query := `
+	UPDATE Accounts
+  SET first_name = $1,
+    last_name = $2,
+    number = $3,
+    balance = $4
+  WHERE id = $5
+  RETURNING *;
+	`
+
+	err := s.db.QueryRow(query,
+		a.FirstName,
+		a.LastName,
+		a.Number,
+		a.Balance,
+		id,
+	).Scan(
+		&a.ID,
+		&a.FirstName,
+		&a.LastName,
+		&a.Number,
+		&a.Balance,
+		&a.Updated_at,
+		&a.Created_at,
+	)
+
+	if err != nil {
+		return nil, err
+	}
+
+	return a, nil
 }
 
 func (s *PostgresStore) DeleteAccount(id int) error {
@@ -96,8 +134,13 @@ func (s *PostgresStore) GetAccountByID(id int) (*Account, error) {
 	account := &Account{}
 
 	err := s.db.QueryRow(query, id).Scan(
-		&account.ID, &account.FirstName, &account.LastName,
-		&account.Number, &account.Balance, &account.Updated_at, &account.Created_at,
+		&account.ID,
+		&account.FirstName,
+		&account.LastName,
+		&account.Number,
+		&account.Balance,
+		&account.Updated_at,
+		&account.Created_at,
 	)
 	if err != nil {
 		return nil, err
